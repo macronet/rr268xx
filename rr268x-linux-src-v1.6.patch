@@ -1,0 +1,91 @@
+diff -crB rr268x-linux-src-v1.6-legacy_single/inc/linux/Makefile.def rr268x-linux-src-v1.6-legacy_single-patched/inc/linux/Makefile.def
+*** rr268x-linux-src-v1.6-legacy_single/inc/linux/Makefile.def	2011-03-08 12:00:07.000000000 +0200
+--- rr268x-linux-src-v1.6-legacy_single-patched/inc/linux/Makefile.def	2011-11-05 13:08:10.224818667 +0200
+***************
+*** 74,88 ****
+  KERNELDIR := /lib/modules/$(shell uname -r)/build
+  endif
+  
+! KERNEL_VER := 2.$(shell expr `grep LINUX_VERSION_CODE $(KERNELDIR)/include/linux/version.h | cut -d\  -f3` / 256 % 256)
+  
+  ifeq ($(KERNEL_VER),)
+  $(error Cannot find kernel version. Check $(KERNELDIR)/include/linux/version.h.)
+  endif
+  
+  ifneq ($(KERNEL_VER), 2.6)
+  ifneq ($(KERNEL_VER), 2.4)
+! $(error Only kernel 2.4/2.6 is supported but you use $(KERNEL_VER))
+  endif
+  endif
+  
+--- 74,95 ----
+  KERNELDIR := /lib/modules/$(shell uname -r)/build
+  endif
+  
+! KERNEL_VER := $(shell expr `grep LINUX_VERSION_CODE $(KERNELDIR)/include/linux/version.h | cut -d\  -f3` / 256 / 256).$(shell expr `grep LINUX_VERSION_CODE $(KERNELDIR)/include/linux/version.h | cut -d\  -f3` / 256 % 256)
+  
+  ifeq ($(KERNEL_VER),)
+  $(error Cannot find kernel version. Check $(KERNELDIR)/include/linux/version.h.)
+  endif
+  
++ #
++ # Mask kernel 3.0 as 2.6
++ #
++ ifeq ($(KERNEL_VER), 3.0)
++ KERNEL_VER := 2.6
++ endif
++ 
+  ifneq ($(KERNEL_VER), 2.6)
+  ifneq ($(KERNEL_VER), 2.4)
+! $(error Only kernel 2.4/2.6/3.0 is supported but you use $(KERNEL_VER))
+  endif
+  endif
+  
+diff -crB rr268x-linux-src-v1.6-legacy_single/osm/linux/os_linux.c rr268x-linux-src-v1.6-legacy_single-patched/osm/linux/os_linux.c
+*** rr268x-linux-src-v1.6-legacy_single/osm/linux/os_linux.c	2011-03-08 12:00:07.000000000 +0200
+--- rr268x-linux-src-v1.6-legacy_single-patched/osm/linux/os_linux.c	2011-11-05 08:50:21.187078238 +0200
+***************
+*** 344,350 ****
+--- 344,355 ----
+  					struct block_device *bdev = bdget(MKDEV(major[i], minor));
+  					if (bdev &&
+  #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
++ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
++ 						blkdev_get(bdev, FMODE_READ, NULL)
++ #endif
++ #if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
+  						blkdev_get(bdev, FMODE_READ)
++ #endif
+  #else 
+  						blkdev_get(bdev, FMODE_READ, 0 __BDEV_RAW)
+  #endif
+diff -crB rr268x-linux-src-v1.6-legacy_single/osm/linux/osm_linux.h rr268x-linux-src-v1.6-legacy_single-patched/osm/linux/osm_linux.h
+*** rr268x-linux-src-v1.6-legacy_single/osm/linux/osm_linux.h	2011-03-08 12:00:07.000000000 +0200
+--- rr268x-linux-src-v1.6-legacy_single-patched/osm/linux/osm_linux.h	2011-11-05 08:50:21.187078238 +0200
+***************
+*** 8,18 ****
+  
+  /* system headers */
+  
+  #ifndef AUTOCONF_INCLUDED
+  #include <linux/config.h>
+  #endif
+! 
+! #include <linux/version.h>
+  
+  #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)) && defined(MODVERSIONS)
+  #include <linux/modversions.h>
+--- 8,20 ----
+  
+  /* system headers */
+  
++ #include <linux/version.h>
++ 
++ #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
+  #ifndef AUTOCONF_INCLUDED
+  #include <linux/config.h>
+  #endif
+! #endif
+  
+  #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)) && defined(MODVERSIONS)
+  #include <linux/modversions.h>

@@ -1,0 +1,131 @@
+diff -crB rr268x-linux-src-v1.4/inc/linux/Makefile.def rr268x-linux-src-v1.4-patched/inc/linux/Makefile.def
+*** rr268x-linux-src-v1.4/inc/linux/Makefile.def	2009-11-24 09:58:24.000000000 +0200
+--- rr268x-linux-src-v1.4-patched/inc/linux/Makefile.def	2011-11-05 13:09:47.959824345 +0200
+***************
+*** 74,91 ****
+  KERNELDIR := /lib/modules/$(shell uname -r)/build
+  endif
+  
+! KERNEL_VER := 2.$(shell expr `grep LINUX_VERSION_CODE $(KERNELDIR)/include/linux/version.h | cut -d\  -f3` / 256 % 256)
+  
+  ifeq ($(KERNEL_VER),)
+  $(error Cannot find kernel version. Check $(KERNELDIR)/include/linux/version.h.)
+  endif
+  
+  ifneq ($(KERNEL_VER), 2.6)
+  ifneq ($(KERNEL_VER), 2.4)
+! $(error Only kernel 2.4/2.6 is supported but you use $(KERNEL_VER))
+  endif
+  endif
+  
+  ifeq ($(KERNEL_VER), 2.6)
+  
+  TARGET := $(TARGETNAME).ko
+--- 74,102 ----
+  KERNELDIR := /lib/modules/$(shell uname -r)/build
+  endif
+  
+! KERNEL_VER := $(shell expr `grep LINUX_VERSION_CODE $(KERNELDIR)/include/linux/version.h | cut -d\  -f3` / 256 / 256).$(shell expr `grep LINUX_VERSION_CODE $(KERNELDIR)/include/linux/version.h | cut -d\  -f3` / 256 % 256)
+  
+  ifeq ($(KERNEL_VER),)
+  $(error Cannot find kernel version. Check $(KERNELDIR)/include/linux/version.h.)
+  endif
+  
++ #
++ # Mask kernel 3.0 as 2.6
++ #
++ ifeq ($(KERNEL_VER), 3.0)
++ KERNEL_VER := 2.6
++ endif
++ 
+  ifneq ($(KERNEL_VER), 2.6)
+  ifneq ($(KERNEL_VER), 2.4)
+! $(error Only kernel 2.4/2.6/3.0 is supported but you use $(KERNEL_VER))
+  endif
+  endif
+  
++ ifeq ($(KERNEL_VER), 3.0)
++ KERNEL_VER := 2.6
++ endif
++ 
+  ifeq ($(KERNEL_VER), 2.6)
+  
+  TARGET := $(TARGETNAME).ko
+diff -crB rr268x-linux-src-v1.4/osm/linux/os_linux.c rr268x-linux-src-v1.4-patched/osm/linux/os_linux.c
+*** rr268x-linux-src-v1.4/osm/linux/os_linux.c	2009-11-24 09:58:25.000000000 +0200
+--- rr268x-linux-src-v1.4-patched/osm/linux/os_linux.c	2011-11-05 05:52:51.621866983 +0200
+***************
+*** 260,266 ****
+--- 260,271 ----
+  					struct block_device *bdev = bdget(MKDEV(major[i], minor));
+  					if (bdev &&
+  #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,28)
++ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
++ 						blkdev_get(bdev, FMODE_READ, NULL)
++ #endif
++ #if LINUX_VERSION_CODE <= KERNEL_VERSION(2,6,36)
+  						blkdev_get(bdev, FMODE_READ)
++ #endif
+  #else 
+  						blkdev_get(bdev, FMODE_READ, 0 __BDEV_RAW)
+  #endif
+diff -crB rr268x-linux-src-v1.4/osm/linux/osm_linux.c rr268x-linux-src-v1.4-patched/osm/linux/osm_linux.c
+*** rr268x-linux-src-v1.4/osm/linux/osm_linux.c	2009-11-24 09:58:25.000000000 +0200
+--- rr268x-linux-src-v1.4-patched/osm/linux/osm_linux.c	2011-11-05 05:45:04.345674246 +0200
+***************
+*** 874,880 ****
+--- 874,884 ----
+  	}
+  }
+  
++ #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
+  static int hpt_queuecommand (Scsi_Cmnd * SCpnt, void (*done) (Scsi_Cmnd *))
++ #else
++ static int hpt_queuecommand_lck (Scsi_Cmnd * SCpnt, void (*done) (Scsi_Cmnd *))
++ #endif
+  {
+  	struct Scsi_Host *phost = sc_host(SCpnt);
+  	PVBUS_EXT vbus_ext = get_vbus_ext(phost);
+***************
+*** 1408,1413 ****
+--- 1412,1421 ----
+  	return 0;
+  }
+  
++ #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,37)
++ DEF_SCSI_QCMD(hpt_queuecommand)
++ #endif
++ 
+  static int hpt_reset (Scsi_Cmnd *SCpnt)
+  {
+  	PVBUS_EXT vbus_ext = get_vbus_ext(sc_host(SCpnt));
+diff -crB rr268x-linux-src-v1.4/osm/linux/osm_linux.h rr268x-linux-src-v1.4-patched/osm/linux/osm_linux.h
+*** rr268x-linux-src-v1.4/osm/linux/osm_linux.h	2009-11-24 09:58:25.000000000 +0200
+--- rr268x-linux-src-v1.4-patched/osm/linux/osm_linux.h	2011-11-05 05:45:04.345674246 +0200
+***************
+*** 8,18 ****
+  
+  /* system headers */
+  
+  #ifndef AUTOCONF_INCLUDED
+  #include <linux/config.h>
+  #endif
+! 
+! #include <linux/version.h>
+  
+  #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)) && defined(MODVERSIONS)
+  #include <linux/modversions.h>
+--- 8,20 ----
+  
+  /* system headers */
+  
++ #include <linux/version.h>
++ 
++ #if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,37)
+  #ifndef AUTOCONF_INCLUDED
+  #include <linux/config.h>
+  #endif
+! #endif
+  
+  #if (LINUX_VERSION_CODE < KERNEL_VERSION(2,5,0)) && defined(MODVERSIONS)
+  #include <linux/modversions.h>
